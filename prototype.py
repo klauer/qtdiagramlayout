@@ -1,8 +1,6 @@
 import logging
 from collections import defaultdict
 
-from pcdswidgets.vacuum.valves import PneumaticValve
-
 import qtpynodeeditor
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -261,7 +259,7 @@ def main(app, connections, sizes):
     view.resize(800, 600)
 
     shapes = {
-        idx: PneumaticValve()#QtWidgets.QLabel(f'{idx}: {connections[idx]}')
+        idx: QtWidgets.QLabel(f'{idx}: {connections[idx]}')
         for idx in range(len(sizes))
     }
 
