@@ -83,7 +83,7 @@ def calculate_position(parent, node, direction, min_spacing, parent_to_node=True
     n_x, n_y, n_w, n_h, n_g_x, n_g_y, n_g_w, n_g_h = node.get_bounding_rect()
 
     print("-" * 120)
-    print('Connecting Parent {} to Node {} via {}.'.format(parent, node, dir))
+    print('Connecting Parent {} to Node {} via {}.'.format(parent, node, direction))
     print('PX: {}\tPY: {}\tPW: {}\tPH: {}\tPGW: {}\tPGH: {}'.format(p_x, p_y,
                                                                     p_w, p_h,
                                                                     p_g_w,
@@ -413,15 +413,15 @@ if __name__ == '__main__':
 
     conns, sizes = test_ken()
     # conns, sizes = test_loop_connections()
-    scene, view, nodes = main(app, conns, sizes)
+    # scene, view, nodes = main(app, conns, sizes)
+
+    tests = {name: value for name, value
+             in globals().items() if name.startswith('test_') and callable(value)}
+
+    for test_name, test in tests.items():
+        conns, sizes = test()
+        scene, view, nodes = main(app, conns, sizes)
+        save_image(scene, view, fn=f"output/{test_name}.png")
+
     view.show()
     app.exec_()
-    # #
-    # for idx, test in enumerate([test_1, test_11, test_12, test_2, test_square, test_ken, test_ken2, test_loop_connections]):
-    #     conns, sizes = test()
-    #     scene, view, nodes = main(app, conns, sizes)
-    #     save_image(scene, view, fn="~/diagram_example_screens/scheme/{}.png".format(idx))
-    #     # view.show()
-
-
-
