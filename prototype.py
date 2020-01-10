@@ -9,6 +9,10 @@ invert_direction = {
     'e': 'w',
     'w': 'e',
     's': 'n',
+    'nw': 'se',
+    'ne': 'sw',
+    'sw': 'ne',
+    'se': 'nw',
 }
 
 class Node:
@@ -83,7 +87,7 @@ def calculate_position(parent, node, direction, min_spacing, parent_to_node=True
     n_x, n_y, n_w, n_h, n_g_x, n_g_y, n_g_w, n_g_h = node.get_bounding_rect()
 
     print("-" * 120)
-    print('Connecting Parent {} to Node {} via {}.'.format(parent, node, dir))
+    print('Connecting Parent {} to Node {} via {}.'.format(parent, node, direction))
     print('PX: {}\tPY: {}\tPW: {}\tPH: {}\tPGW: {}\tPGH: {}'.format(p_x, p_y,
                                                                     p_w, p_h,
                                                                     p_g_w,
@@ -105,35 +109,56 @@ def calculate_position(parent, node, direction, min_spacing, parent_to_node=True
         # in a depth first method.
         inv_dir = invert_direction[direction]
 
-        if inv_dir == 'n':
-            spacing_y = n_g_h - n_h if n_y != n_g_y else 0
-            x = n_x + n_w / 2.0 - p_w / 2.0
-            y = n_y - min_spacing - spacing_y - p_h
-        elif inv_dir == 's':
-            spacing_y = n_g_h - n_h if n_y == 0 else 0
-            x = n_x + n_w / 2.0 - p_w / 2.0
-            y = n_y + n_h + min_spacing + spacing_y
-        elif inv_dir == 'e':
+        x = n_x
+        y = n_y
+
+        if 'n' in inv_dir or 's' in inv_dir:
+            if 'e' in inv_dir:
+                spacing_x = n_g_w - n_w if n_x == 0 else 0
+                x += n_w + spacing_x + min_spacing
+            elif 'w' in inv_dir:
+                spacing_x = n_g_w - n_w if n_x != 0 else 0
+                x += -min_spacing - spacing_x - p_w
+            else:
+                x += n_w / 2.0 - p_w / 2.0
+
+            if 'n' in inv_dir:
+                spacing_y = n_g_h - n_h if n_y != n_g_y else 0
+                y += -min_spacing - spacing_y - p_h
+            elif 's' in inv_dir:
+                spacing_y = n_g_h - n_h if n_y == 0 else 0
+                y += n_h + min_spacing + spacing_y
+        elif 'e' in inv_dir:
             spacing_x = n_g_w - n_w if n_x == 0 else 0
-            x = n_x + n_w + spacing_x + min_spacing
-            y = n_y + n_h / 2.0 - p_h / 2.0
-        else:  # w
+            x += n_w + spacing_x + min_spacing
+            y += n_h / 2.0 - p_h / 2.0
+        elif 'w' in inv_dir:
             spacing_x = n_g_w - n_w if n_x != 0 else 0
-            x = n_x - min_spacing - spacing_x - p_w
-            y = n_y + n_h / 2.0 - p_h / 2.0
+            x += -min_spacing - spacing_x - p_w
+            y += n_h / 2.0 - p_h / 2.0
     else:
-        if direction == 'n':
-            x = p_x + p_w / 2.0 - n_w / 2.0
-            y = n_y - min_spacing - spacing_y - p_h
-        elif direction == 's':
-            x = p_x + p_w / 2.0 - n_w / 2.0
-            y = p_y + p_h + min_spacing
-        elif direction == 'e':
-            x = p_x + p_w + min_spacing
-            y = p_y + p_h / 2.0 - n_h / 2.0
-        else:  # w
-            x = p_x - min_spacing - n_w
-            y = p_y + p_h / 2.0 - n_h / 2.0
+        x = p_x
+        y = p_y
+        if 'n' in direction or 's' in direction:
+            if 'e' in direction:
+                x += p_w + min_spacing
+            elif 'w' in direction:
+                x += -min_spacing - n_w
+            else:
+                x += p_w / 2.0 - n_w / 2.0  # ?
+
+            if 'n' in direction:
+                y = n_y - min_spacing - spacing_y - p_h
+                # TODO: check n_y vs p_y here?
+            elif 's' in direction:
+                y += p_h + min_spacing
+        else:
+            if 'e' in direction:
+                x += p_w + min_spacing
+                y += p_h / 2.0 - n_h / 2.0
+            elif 'w' in direction:
+                x += -min_spacing - n_w
+                y += p_h / 2.0 - n_h / 2.0
 
     return x, y
 
@@ -188,38 +213,57 @@ def connect_widgets(scene, parent, visited=[]):
         connections[dir] = node
 
     for dir, node in connections.items():
-        p_x = parent.shape.pos().x()
-        p_y = parent.shape.pos().y()
         p_w = parent.widget.width()
         p_h = parent.widget.height()
 
-        n_x = node.shape.pos().x()
-        n_y = node.shape.pos().y()
         n_w = node.widget.width()
         n_h = node.widget.height()
 
-        x = 0
-        y = 0
+        l_x1 = parent.shape.pos().x()
+        l_y1 = parent.shape.pos().y()
+        l_x2 = node.shape.pos().x()
+        l_y2 = node.shape.pos().y()
+
         if dir == 'n':
-            l_x1 = p_x + p_w/2.0
-            l_y1 = p_y
-            l_x2 = n_x + n_w/2.0
-            l_y2 = n_y + n_h
+            l_x1 += p_w/2.0
+            l_y1 += 0.0
+            l_x2 += n_w/2.0
+            l_y2 += n_h
         elif dir == 's':
-            l_x1 = p_x + p_w/2.0
-            l_y1 = p_y + p_h
-            l_x2 = n_x + n_w/2.0
-            l_y2 = n_y
+            l_x1 += p_w/2.0
+            l_y1 += p_h
+            l_x2 += n_w/2.0
+            l_y2 += 0.0
         elif dir == 'e':
-            l_x1 = p_x + p_w
-            l_y1 = p_y + p_h/2.0
-            l_x2 = n_x
-            l_y2 = n_y + n_h/2.0
-        else:
-            l_x1 = p_x
-            l_y1 = p_y + p_h/2.0
-            l_x2 = n_x + n_w
-            l_y2 = n_y + n_h/2.0
+            l_x1 += p_w
+            l_y1 += p_h/2.0
+            l_x2 += 0.0
+            l_y2 += n_h/2.0
+        elif dir == 'w':
+            l_x1 += 0.0
+            l_y1 += p_h/2.0
+            l_x2 += n_w
+            l_y2 += n_h/2.0
+        elif dir == 'nw':
+            l_x1 += 0
+            l_y1 += 0
+            l_x2 += n_w
+            l_y2 += n_h
+        elif dir == 'ne':
+            l_x1 += p_w
+            l_y1 += 0
+            l_x2 += 0
+            l_y2 += n_h
+        elif dir == 'sw':
+            l_x1 += 0
+            l_y1 += p_h
+            l_x2 += n_w
+            l_y2 += 0
+        elif dir == 'se':
+            l_x1 += p_w
+            l_y1 += p_h
+            l_x2 += 0
+            l_y2 += 0
 
         scene.addLine(
             QtCore.QLineF(
@@ -407,21 +451,32 @@ def test_loop_connections():
     return conns, sizes
 
 
+def test_intercardinal():
+    conns = {
+        0: {'ne': 1},
+        1: {'se': 2},
+        2: {'sw': 3},
+        3: {'nw': 4},
+        4: {},
+    }
+    sizes = [(3, 3),(3, 3),(3, 3),(3, 3),(3, 3)]
+    return conns, sizes
+
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
     app = QtWidgets.QApplication([])
 
     conns, sizes = test_ken()
     # conns, sizes = test_loop_connections()
-    scene, view, nodes = main(app, conns, sizes)
+    # scene, view, nodes = main(app, conns, sizes)
+
+    tests = {name: value for name, value
+             in globals().items() if name.startswith('test_') and callable(value)}
+
+    for test_name, test in tests.items():
+        conns, sizes = test()
+        scene, view, nodes = main(app, conns, sizes)
+        save_image(scene, view, fn=f"output/{test_name}.png")
+
     view.show()
     app.exec_()
-    # #
-    # for idx, test in enumerate([test_1, test_11, test_12, test_2, test_square, test_ken, test_ken2, test_loop_connections]):
-    #     conns, sizes = test()
-    #     scene, view, nodes = main(app, conns, sizes)
-    #     save_image(scene, view, fn="~/diagram_example_screens/scheme/{}.png".format(idx))
-    #     # view.show()
-
-
-
