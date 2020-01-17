@@ -319,8 +319,8 @@ def main(app, connections, sizes):
     root = build_tree(shapes, connections)
 
     layout(scene, root, root)
-    remove_groups(scene, root)
-    validate(scene, shapes)
+    # remove_groups(scene, root)
+    # validate(scene, shapes)
     connect_widgets(scene, root)
 
     return scene, view, root
@@ -484,89 +484,135 @@ def closest_point_to(target: QtCore.QPointF,
     return shortest_distance
 
 
-def hit(projectile_path: QtGui.QPainterPath,
+def get_line_segments(
+        start_pos: QtCore.QPointF,
+        end_pos: QtCore.QPointF,
         scene: QtWidgets.QGraphicsScene,
         ) -> QtCore.QPointF:
     '''
-    If projectile_path intersects with any items in scene, returns the position
-    of the intersection.
+    If the linear path between (start_pos, end_pos) intersects with any items
+    in scene, returns two lists of line segments::
+
+        (overlapping, non-overlapping)
     '''
-    items_in_path = scene.items(projectile_path, QtCore.Qt.IntersectsItemBoundingRect)
-    if not items_in_path:
-        return None
 
-    projectile_start_pos = QtCore.QPointF(projectile_path.elementAt(0))
-    shortest_distance = 1e99
-    closest = None
-    for item in items_in_path:
-        distance_as_point = item.pos() - projectile_start_pos
-        distance = abs(distance_as_point.x() + distance_as_point.y())
-        if distance < shortest_distance:
-            shortest_distance = distance
-            closest = item
+    # Based on https://stackoverflow.com/questions/17512547/
+    check_path = QtGui.QPainterPath()
+    check_path.moveTo(start_pos)
+    check_path.lineTo(end_pos)
 
-    target_shape = QtGui.QPainterPath(closest.mapToScene(closest.shape()))
+    items_in_path = scene.items(check_path, QtCore.Qt.IntersectsItemBoundingRect)
 
-    # QLineF has normalVector(), which is useful for extending our path to a
-    # rectangle.  The path needs to be a rectangle, as
-    # QPainterPath.intersected() only accounts for intersections between fill
-    # areas, which projectile_path doesn't have.
-    path_as_line = QtCore.QLineF(projectile_start_pos,
-                                 QtCore.QPointF(projectile_path.elementAt(1))
-                                 )
+    def get_start_end_point(item):
+        target_shape = QtGui.QPainterPath(item.mapToScene(item.shape()))
 
-    # Extend the first point in the path out by 1 pixel.
-    start_edge = path_as_line.normalVector()
-    start_edge.setLength(1)
+        # QLineF has normalVector(), which is useful for extending our path to a
+        # rectangle.  The path needs to be a rectangle, as
+        # QPainterPath.intersected() only accounts for intersections between fill
+        # areas, which check_path doesn't have.
+        path_as_line = QtCore.QLineF(start_pos,
+                                     QtCore.QPointF(check_path.elementAt(1))
+                                     )
 
-    # Swap the points in the line so the normal vector is at the other end of
-    # the line.
-    path_as_line.setPoints(path_as_line.p2(), path_as_line.p1())
-    end_edge = path_as_line.normalVector()
+        # Extend the first point in the path out by 1 pixel.
+        start_edge = path_as_line.normalVector()
+        start_edge.setLength(1)
 
-    # The end point is currently pointing the wrong way move it to face the
-    # same direction as start_edge.
-    end_edge.setLength(-1)
+        # Swap the points in the line so the normal vector is at the other end of
+        # the line.
+        path_as_line.setPoints(path_as_line.p2(), path_as_line.p1())
+        end_edge = path_as_line.normalVector()
 
-    # Now we can create a rectangle from our edges.
-    rect_path = QtGui.QPainterPath(start_edge.p1())
-    rect_path.lineTo(start_edge.p2())
-    rect_path.lineTo(end_edge.p2())
-    rect_path.lineTo(end_edge.p1())
-    rect_path.lineTo(start_edge.p1())
+        # The end point is currently pointing the wrong way move it to face the
+        # same direction as start_edge.
+        end_edge.setLength(-1)
 
-    # Visualize the rectangle that we created.
-    scene.addPath(rect_path, QtGui.QPen(QtGui.QBrush(QtCore.Qt.blue), 2))
+        # Now we can create a rectangle from our edges.
+        rect_path = QtGui.QPainterPath(start_edge.p1())
+        rect_path.lineTo(start_edge.p2())
+        rect_path.lineTo(end_edge.p2())
+        rect_path.lineTo(end_edge.p1())
+        rect_path.lineTo(start_edge.p1())
 
-    # Visualize the intersection of the rectangle with the item.
-    scene.addPath(target_shape.intersected(rect_path),
-                  QtGui.QPen(QtGui.QBrush(QtCore.Qt.cyan), 2))
+        # Visualize the rectangle that we created.
+        # scene.addPath(rect_path, QtGui.QPen(QtGui.QBrush(QtCore.Qt.blue), 2))
 
-    # The hit position will be the element (point) of the rectangle that is the
-    # closest to where the projectile was fired from.
-    return closest_point_to(projectile_start_pos,
-                            target_shape.intersected(rect_path))
+        # Visualize the intersection of the rectangle with the item.
+        intersection = target_shape.intersected(rect_path)
+        # scene.addPath(intersection,
+        #               QtGui.QPen(QtGui.QBrush(QtCore.Qt.cyan), 2))
+
+        if intersection.elementCount() == 0:
+            # Oops...
+            return None
+
+        p1 = QtCore.QPointF(intersection.elementAt(0))
+        p2 = QtCore.QPointF(intersection.elementAt(1))
+
+        # Ensure that the first point returned is always closer to the starting
+        # position than the second:
+        if distance(p1, start_pos) < distance(p2, start_pos):
+            return p1, p2
+        return p2, p1
+
+    def distance(p1, p2):
+        'Distance squared from p1-p2'
+        return (p1 - p2).manhattanLength()
+
+    def distance_sort(point_pair):
+        p1, _ = point_pair
+        return distance(start_pos, p1)
+
+    overlap = [get_start_end_point(item) for item in items_in_path
+               if isinstance(item, QtWidgets.QGraphicsProxyWidget)]
+
+    while None in overlap:
+        # We might hit the corner of a widget, which counts as an intersection
+        # but has no points...
+        overlap.remove(None)
+
+    overlap.sort(key=distance_sort)
+
+    if not overlap:
+        non_overlap = [(start_pos, end_pos)]
+    else:
+        cur_pos = start_pos
+        non_overlap = []
+        threshold = 2
+        for ov in overlap:
+            p1, p2 = ov
+            if distance(cur_pos, p1) >= threshold:
+                non_overlap.append((cur_pos, p1))
+            cur_pos = p2
+
+        if distance(cur_pos, end_pos) >= threshold:
+            non_overlap.append((cur_pos, end_pos))
+
+    return overlap, non_overlap
 
 
 def intersection_test(scene):
-    projectile_path = QtGui.QPainterPath()
-    projectile_path.moveTo(100, 100)
-    projectile_path.lineTo(200, 0)
-    projectile_path.lineTo(100, 300)
+    overlap_pen = QtGui.QPen(QtCore.Qt.red)
+    overlap_pen.setStyle(QtCore.Qt.DotLine)
 
-    hit_pos = hit(projectile_path, scene)
-    if hit_pos:
-        print(hit_pos, hit_pos.x, hit_pos.y)
+    for offset in range(-200, 200, 10):
+        print('offset', offset)
+        over, normal = get_line_segments(
+            QtCore.QPointF(100 + offset, 100),
+            QtCore.QPointF(200 + offset, -100), scene)
 
-        hit_x, hit_y = hit_pos.x(), hit_pos.y()
-        scene.addEllipse(hit_x - 2,
-                         hit_y - 2, 4, 4,
-                         QtGui.QPen(QtCore.Qt.red))
+        for p1, p2 in normal:
+            scene.addLine(QtCore.QLineF(p1, p2), QtGui.QPen(QtCore.Qt.blue))
 
-    scene.addPath(projectile_path, QtGui.QPen(QtCore.Qt.DashLine))
-    scene.addText("start").setPos(180, 150)
-    scene.addText("end").setPos(20, 0)
-
+        for p1, p2 in over:
+            # scene.addEllipse(p1.x() - 2,
+            #                  p1.y() - 2, 4, 4,
+            #                  QtGui.QPen(QtCore.Qt.red))
+            # scene.addEllipse(p2.x() - 2,
+            #                  p2.y() - 2, 4, 4,
+            #                  QtGui.QPen(QtCore.Qt.blue))
+            scene.addLine(QtCore.QLineF(p1, p2), overlap_pen)
+        print('done')
 
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
