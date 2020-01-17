@@ -462,6 +462,112 @@ def test_intercardinal():
     sizes = [(3, 3),(3, 3),(3, 3),(3, 3),(3, 3)]
     return conns, sizes
 
+
+
+def closest_point_to(target: QtCore.QPointF,
+                     source_path: QtGui.QPainterPath) -> QtCore.QPointF:
+    '''
+    Returns the closest element (position) in source_path to target, using
+    QPoint.manhattanLength() to determine the distances.
+    '''
+    assert not source_path.isEmpty()
+
+    shortest_distance = QtCore.QPointF(source_path.elementAt(0)) - target
+    shortest_length = shortest_distance.manhattanLength()
+
+    for i in range(1, source_path.elementCount()):
+        distance = QtCore.QPointF(source_path.elementAt(i)) - target
+        length = distance.manhattanLength()
+        if length < shortest_length:
+            shortest_distance = QtCore.QPointF(source_path.elementAt(i))
+            shortest_length = length
+    return shortest_distance
+
+
+def hit(projectile_path: QtGui.QPainterPath,
+        scene: QtWidgets.QGraphicsScene,
+        ) -> QtCore.QPointF:
+    '''
+    If projectile_path intersects with any items in scene, returns the position
+    of the intersection.
+    '''
+    items_in_path = scene.items(projectile_path, QtCore.Qt.IntersectsItemBoundingRect)
+    if not items_in_path:
+        return None
+
+    projectile_start_pos = QtCore.QPointF(projectile_path.elementAt(0))
+    shortest_distance = 1e99
+    closest = None
+    for item in items_in_path:
+        distance_as_point = item.pos() - projectile_start_pos
+        distance = abs(distance_as_point.x() + distance_as_point.y())
+        if distance < shortest_distance:
+            shortest_distance = distance
+            closest = item
+
+    target_shape = QtGui.QPainterPath(closest.mapToScene(closest.shape()))
+
+    # QLineF has normalVector(), which is useful for extending our path to a
+    # rectangle.  The path needs to be a rectangle, as
+    # QPainterPath.intersected() only accounts for intersections between fill
+    # areas, which projectile_path doesn't have.
+    path_as_line = QtCore.QLineF(projectile_start_pos,
+                                 QtCore.QPointF(projectile_path.elementAt(1))
+                                 )
+
+    # Extend the first point in the path out by 1 pixel.
+    start_edge = path_as_line.normalVector()
+    start_edge.setLength(1)
+
+    # Swap the points in the line so the normal vector is at the other end of
+    # the line.
+    path_as_line.setPoints(path_as_line.p2(), path_as_line.p1())
+    end_edge = path_as_line.normalVector()
+
+    # The end point is currently pointing the wrong way move it to face the
+    # same direction as start_edge.
+    end_edge.setLength(-1)
+
+    # Now we can create a rectangle from our edges.
+    rect_path = QtGui.QPainterPath(start_edge.p1())
+    rect_path.lineTo(start_edge.p2())
+    rect_path.lineTo(end_edge.p2())
+    rect_path.lineTo(end_edge.p1())
+    rect_path.lineTo(start_edge.p1())
+
+    # Visualize the rectangle that we created.
+    scene.addPath(rect_path, QtGui.QPen(QtGui.QBrush(QtCore.Qt.blue), 2))
+
+    # Visualize the intersection of the rectangle with the item.
+    scene.addPath(target_shape.intersected(rect_path),
+                  QtGui.QPen(QtGui.QBrush(QtCore.Qt.cyan), 2))
+
+    # The hit position will be the element (point) of the rectangle that is the
+    # closest to where the projectile was fired from.
+    return closest_point_to(projectile_start_pos,
+                            target_shape.intersected(rect_path))
+
+
+def intersection_test(scene):
+    projectile_path = QtGui.QPainterPath()
+    projectile_path.moveTo(100, 100)
+    projectile_path.lineTo(200, 0)
+    projectile_path.lineTo(100, 300)
+
+    hit_pos = hit(projectile_path, scene)
+    if hit_pos:
+        print(hit_pos, hit_pos.x, hit_pos.y)
+
+        hit_x, hit_y = hit_pos.x(), hit_pos.y()
+        scene.addEllipse(hit_x - 2,
+                         hit_y - 2, 4, 4,
+                         QtGui.QPen(QtCore.Qt.red))
+
+    scene.addPath(projectile_path, QtGui.QPen(QtCore.Qt.DashLine))
+    scene.addText("start").setPos(180, 150)
+    scene.addText("end").setPos(20, 0)
+
+
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
     app = QtWidgets.QApplication([])
@@ -470,12 +576,12 @@ if __name__ == '__main__':
     # conns, sizes = test_loop_connections()
     # scene, view, nodes = main(app, conns, sizes)
 
-    tests = {name: value for name, value
-             in globals().items() if name.startswith('test_') and callable(value)}
+    tests = {'test_1': test_1}
 
     for test_name, test in tests.items():
         conns, sizes = test()
         scene, view, nodes = main(app, conns, sizes)
+        intersection_test(scene)
         save_image(scene, view, fn=f"output/{test_name}.png")
 
     view.show()
